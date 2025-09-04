@@ -123,17 +123,17 @@ else {
 # Only 4 primary partitions are allowed
 if ($partitions.Count -ge 4) {
     Write-Log -Level ERROR "There are 4 or more partitions. Exiting..."
-    exit
+    exit 1
 }
 
 # Abort if the S or T drive are currently in use.
 if (Get-PSDrive S -ErrorAction SilentlyContinue) {
     Write-Log -Level ERROR "The S Drive is currently in use. Aborting."
-    #exit
+    exit 1
 }
 if (Get-PSDrive T -ErrorAction SilentlyContinue) {
     Write-Log -Level ERROR "The T Drive is currently in use. Aborting."
-    exit
+    exit 1
 }
 
 

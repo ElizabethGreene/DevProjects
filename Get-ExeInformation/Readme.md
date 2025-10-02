@@ -30,7 +30,7 @@ Primary use cases for this tool are to determine if an app is 32 or 64-bit, and 
 
 ## Screenshot
 
-![Screenshot showing Get-ExeInformation.ps1 output](images/screenshot.png)
+![Screenshot showing Get-ExeInformation.ps1 output](Images/screenshot.png)
 
 ## Requirements
 

@@ -290,7 +290,7 @@ $PartitionsToRemove | ForEach-Object {
         Write-Log -Level INFO "Successfully removed old system partition at offset $($_.Offset)"
     } catch {
         Write-Log -Level WARN "Failed to remove old system partition at offset $($_.Offset). Scheduling removal on next reboot."
-        Schedule-OldSystemPartitionRemoval -systemPartition $_ -diskNumber
+        Schedule-OldSystemPartitionRemoval -systemPartition $_ -diskNumber $diskNumber
     }
 }
 

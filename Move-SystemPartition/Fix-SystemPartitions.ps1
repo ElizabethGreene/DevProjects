@@ -41,77 +41,83 @@ function Write-Log {
 }
 
 function Schedule-OldSystemPartitionRemoval {
+ 
+@'
+# This script is scheduled to run at startup to remove old system partitions that could not be removed while Windows was running.
+
+$script:LogFile = "C:\Windows\Temp\Fix-SystemPartition.log"
+$script:LogToConsole = $true    # set $false to only write to file
+$LogFile = $script:LogFile
+
+function Write-Log {
     param(
-        [Parameter(Mandatory=$true)]$systemPartition,
-        [Parameter(Mandatory=$true)]$diskNumber
-    )   
-{
-    
-
-# First, create the commands that diskpart will run.
-$partitionNumber = $systemPartition.PartitionNumber
-
-@"
-select disk $diskNumber
-select partition $partitionNumber
-delete partition override
-"@  | Out-File -FilePath "c:\windows\temp\DiskPartRemoveSystemPartition$partitionNumber.txt" -Encoding ascii
-
-# Next, we create the script that will run those commands AND remove the scheduled task.
-@"
-Echo Scheduled Task to remove old system partition initiated >> $LogFile
-Date /T >> $LogFile
-Time /T >> $LogFile
-diskpart.exe /s c:\windows\temp\DiskPartRemoveSystemPartition$partitionNumber.txt >> $LogFile
-schtasks.exe /delete /tn "RemoveOldSystemPartition$partitionNumber" /f >> $LogFile
-"@ | Out-File -FilePath "c:\windows\temp\RemoveOldSystemPartitionTask$partitionNumber.bat" -Encoding ascii 
-
-Write-Log -Level INFO "Creating Scheduled Task to remove old system partition"
-# and finally create the scheduled task to run the script above
-$action = New-ScheduledTaskAction -Execute "c:\windows\temp\RemoveOldSystemPartitionTask$partitionNumber.bat"
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-    Register-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -TaskName "RemoveOldSystemPartition$partitionNumber" -Description "Removes the old system partition after reboot" -Force  >> $LogFile
-}
-
-
-function get-DriveDeviceNames {
-    # Source Attribution: https://serverfault.com/questions/571354/how-do-i-identify-a-volume-in-wmi-from-a-volume-name-reported-in-the-event-log#:~:text=%23%3E%20%23%20Utilize%20P%2FInvoke%20in%20order%20to%20call,require%20compiling%20C%23%20code.%20%24DynAssembly%20%3D%20New-Object%20System.Reflection.AssemblyName%28%27SysUtils%27%29
-    # Build System Assembly in order to call Kernel32:QueryDosDevice. 
-    $DynAssembly = New-Object System.Reflection.AssemblyName('SysUtils')
-    $AssemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($DynAssembly, [Reflection.Emit.AssemblyBuilderAccess]::Run)
-    $ModuleBuilder = $AssemblyBuilder.DefineDynamicModule('SysUtils', $False)
- 
-    # Define [Kernel32]::QueryDosDevice method
-    $TypeBuilder = $ModuleBuilder.DefineType('Kernel32', 'Public, Class')
-    $PInvokeMethod = $TypeBuilder.DefinePInvokeMethod('QueryDosDevice', 'kernel32.dll', ([Reflection.MethodAttributes]::Public -bor [Reflection.MethodAttributes]::Static), [Reflection.CallingConventions]::Standard, [UInt32], [Type[]]@([String], [Text.StringBuilder], [UInt32]), [Runtime.InteropServices.CallingConvention]::Winapi, [Runtime.InteropServices.CharSet]::Auto)
-    $DllImportConstructor = [Runtime.InteropServices.DllImportAttribute].GetConstructor(@([String]))
-    $SetLastError = [Runtime.InteropServices.DllImportAttribute].GetField('SetLastError')
-    $SetLastErrorCustomAttribute = New-Object Reflection.Emit.CustomAttributeBuilder($DllImportConstructor, @('kernel32.dll'), [Reflection.FieldInfo[]]@($SetLastError), @($true))
-    $PInvokeMethod.SetCustomAttribute($SetLastErrorCustomAttribute)
-    $Kernel32 = $TypeBuilder.CreateType()
- 
-    $Max = 65536
-    $StringBuilder = New-Object System.Text.StringBuilder($Max)
- 
-    $result = @()
-    Get-WmiObject Win32_Volume | ? { $_.DriveLetter } | % {
-        $ReturnLength = $Kernel32::QueryDosDevice($_.DriveLetter, $StringBuilder, $Max)
- 
-        if ($ReturnLength) {
-            $DriveMapping = @{
-                DriveLetter = $_.DriveLetter
-                DevicePath  = $StringBuilder.ToString()
-            }
- 
-            $result += New-Object PSObject -Property $DriveMapping
+        [Parameter(Mandatory=$true)][string]$Message,
+        [ValidateSet("INFO","WARN","ERROR","DEBUG")][string]$Level = "INFO"
+    )
+    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $entry = "$timestamp [$Level] $Message"
+    try {
+        Add-Content -Path $script:LogFile -Value $entry -ErrorAction Stop
+    } catch {
+        # If logging to file fails, still write to console
+        Write-Host "Failed to write to log file: $($_.Exception.Message)" -ForegroundColor Red
+    }
+    if ($script:LogToConsole) {
+        switch ($Level) {
+            "ERROR" { Write-Host $entry -ForegroundColor Red }
+            "WARN"  { Write-Host $entry -ForegroundColor Yellow }
+            "DEBUG" { Write-Host $entry -ForegroundColor Gray }
+            default { Write-Host $entry }
         }
     }
-    return $result
 }
 
+$EFI_SYSTEM_PARTITION_GPT_TYPE = "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}"
+
+$bootpartition = get-partition -driveletter c
+if (-not $bootpartition) {
+    Write-Log -Level ERROR  "Could not find the boot partition (c:\). Exiting..."
+    exit 1
+}
+
+$diskNumber = $bootpartition.DiskNumber
+
+# Get the current Partitions on this disk
+$partitions = Get-Partition -disknumber $diskNumber
+
+# Find the system partition(s)
+$systemPartition = @()
+
+# That's any partitions marked as System partitions or any FAT32 partitions of size 360MB or less (these are likely mis-marked system partitions)
+$partitions | Where-Object { ($_.Size -gt 80MB -and ($_.Size -le 360MB)) -or ($_.GptType -eq $EFI_SYSTEM_PARTITION_GPT_TYPE) } | ForEach-Object {
+    # Note: We don't check for the active system partition, because the virtual disk service will refuse to remove it.
+    # Instead, we just try to remove all old system partitions and let the ones that can't be removed fail silently.
+    Write-Log -Level INFO "Attempting to remove old system partition at offset $($_.Offset)"
+    $partitionNumber = $_.PartitionNumber
+    try {
+        $_ | Remove-Partition -Confirm:$false -ErrorAction Stop
+        Write-Log -Level INFO "Successfully removed old system partition at offset $($_.Offset)"
+    } catch {
+        Write-Log -Level INFO "Did not remove active system partition at offset $($_.Offset)."
+    }
+}
+
+
+& c:\windows\system32\schtasks.exe /delete /tn "RemoveOldSystemPartitions" /f >> $LogFile
+
+'@ | Out-File -FilePath "c:\windows\temp\RemoveOldSystemPartitions.ps1" -Encoding ascii
+
+Write-Log -Level INFO "Creating Scheduled Task to remove old system partitions"
+# and finally create the scheduled task to run the script above
+$action = New-ScheduledTaskAction -Execute "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-file c:\windows\temp\RemoveOldSystemPartitions.ps1 -executionpolicy bypass"
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    Register-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -TaskName "RemoveOldSystemPartitions" -Description "Removes the old system partitions after reboot" -Force  >> $LogFile
+}
+
+
 # Useful constants
-$EFI_SYSTEM_PARTITION_GPT_TYPE = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
+$EFI_SYSTEM_PARTITION_GPT_TYPE = "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}"
 
 #If the script is not run as an administrator, abort.
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -144,7 +150,7 @@ $partitions = Get-Partition -disknumber $diskNumber
 $systemPartition = @()
 
 # That's any partitions marked as System partitions or any FAT32 partitions of size 360MB or less (these are likely mis-marked system partitions)
-$partitions | Where-Object { ($_.Size -le 360MB) -or ($_.GptType -eq $EFI_SYSTEM_PARTITION_GPT_TYPE) } | ForEach-Object {
+$partitions | Where-Object { ($_.Size -gt 80MB -and ($_.Size -le 360MB)) -or ($_.GptType -eq $EFI_SYSTEM_PARTITION_GPT_TYPE) } | ForEach-Object {
     if ($systemPartition -notcontains $_) {
         $systemPartition += $_
     }
@@ -173,7 +179,7 @@ if ($systemPartition.Count -eq 1) {
 } 
 
 # Now we have to figure out where the system partition should go
-$ TargetSystemPartition = $null
+$TargetSystemPartition = $null
 
 # Find the first system partition on the disk.
 $FirstPartition = $systemPartition | Sort-Object Offset | Select-Object -First 1
@@ -181,54 +187,54 @@ $FirstPartition = $systemPartition | Sort-Object Offset | Select-Object -First 1
 # If it's at the start of the disk, we'll use that one.
 if ($FirstPartition.Offset -le 20MB) {
     $TargetSystemPartition = $FirstPartition
-}
-
-# Is there space for a new system partition at the start of the disk?
-$endOfPreviousPartition = 1048576 # 1MB offset for GPT header and partition table
-foreach ($partition in $partitions | Sort-Object Offset) {
-    $startofPartition = $partition.Offset
-    if ($startofPartition-$endOfPreviousPartition -ge 100MB) {
-        # There is enough space for a new system partition before this partition.
-        # Create a new system partition at the start of the disk.
-            try {
-                Write-Log -Level INFO "Creating Target System Partition at end of disk."
-                $TargetSystemPartition = New-Partition -DiskNumber $diskNumber -Size 100MB -GptType $EFI_SYSTEM_PARTITION_GPT_TYPE -Offset $endOfPreviousPartition
-                # Format the partition
-                Write-Log -Level INFO "Formatting Target System Partition." 
-                $TargetSystemPartition | Format-Volume -FileSystem FAT32 -NewFileSystemLabel "SYSTEM" -Confirm:$false
-            } catch {
-                Write-Log -Level ERROR "Failed to create or format Target System Partition. Exiting..."
-                exit 1
-            }
+} else {
+    # Is there space for a new system partition at the start of the disk?
+    $endOfPreviousPartition = 1048576 # 1MB offset for GPT header and partition table
+    foreach ($partition in $partitions | Sort-Object Offset) {
+        $startofPartition = $partition.Offset
+        if ($startofPartition-$endOfPreviousPartition -ge 100MB) {
+            # There is enough space for a new system partition before this partition.
+            # Create a new system partition at the start of the disk.
+                try {
+                    Write-Log -Level INFO "Creating Target System Partition at end of disk."
+                    $TargetSystemPartition = New-Partition -DiskNumber $diskNumber -Size 100MB -GptType $EFI_SYSTEM_PARTITION_GPT_TYPE -Offset $endOfPreviousPartition
+                    # Format the partition
+                    Write-Log -Level INFO "Formatting Target System Partition." 
+                    $TargetSystemPartition | Format-Volume -FileSystem FAT32 -NewFileSystemLabel "SYSTEM" -Confirm:$false
+                } catch {
+                    Write-Log -Level ERROR "Failed to create or format Target System Partition. Exiting..."
+                    exit 1
+                }
+                
             
-        
-        break
-    }
+            break
+        }
 
-    # If we reach the C: partition, stop checking.  We'll need to put the system partition at the end of the disk.
-    if ($partition.DriveLetter -eq "C") {
-        # Is there space at the end of the disk for a new system partition?
-        $lastPartition = $partitions | Sort-Object Offset | Select-Object -Last 1
-        if (($disk.Size - ($lastPartition.Offset + $lastPartition.Size)) -ge 100MB) {
-            # There is enough space for a new system partition at the end of the disk. Create and format the partition
-            try {
-                Write-Log -Level INFO "Creating Target System Partition at end of disk."
-                $TargetSystemPartition = New-Partition -DiskNumber $diskNumber -Size 100MB -GptType $EFI_SYSTEM_PARTITION_GPT_TYPE -Offset ($lastPartition.Offset + $lastPartition.Size)
-                # Format the partition
-                Write-Log -Level INFO "Formatting Target System Partition." 
-                $TargetSystemPartition | Format-Volume -FileSystem FAT32 -NewFileSystemLabel "SYSTEM" -Confirm:$false
-            } catch {
-                Write-Log -Level ERROR "Failed to create or format Target System Partition. Exiting..."
+        # If we reach the C: partition, stop checking.  We'll need to put the system partition at the end of the disk.
+        if ($partition.DriveLetter -eq "C") {
+            # Is there space at the end of the disk for a new system partition?
+            $lastPartition = $partitions | Sort-Object Offset | Select-Object -Last 1
+            if (($disk.Size - ($lastPartition.Offset + $lastPartition.Size)) -ge 100MB) {
+                # There is enough space for a new system partition at the end of the disk. Create and format the partition
+                try {
+                    Write-Log -Level INFO "Creating Target System Partition at end of disk."
+                    $TargetSystemPartition = New-Partition -DiskNumber $diskNumber -Size 100MB -GptType $EFI_SYSTEM_PARTITION_GPT_TYPE -Offset ($lastPartition.Offset + $lastPartition.Size)
+                    # Format the partition
+                    Write-Log -Level INFO "Formatting Target System Partition." 
+                    $TargetSystemPartition | Format-Volume -FileSystem FAT32 -NewFileSystemLabel "SYSTEM" -Confirm:$false
+                } catch {
+                    Write-Log -Level ERROR "Failed to create or format Target System Partition. Exiting..."
+                    exit 1
+                }
+
+                break
+            } else {
+                Write-Log -Level ERROR "Not enough space at the beginning or end of the disk for a new system partition. Exiting..."
                 exit 1
             }
-
-            break
-        } else {
-            Write-Log -Level ERROR "Not enough space at the beginning or end of the disk for a new system partition. Exiting..."
-            exit 1
         }
+        $endOfPreviousPartition = $partition.Offset + $partition.Size
     }
-    $endOfPreviousPartition = $partition.Offset + $partition.Size
 }
 
 # If we still don't have a target system partition, abort.  This code should be unreachable.
@@ -240,7 +246,7 @@ if (-not $TargetSystemPartition) {
 # Now we iterate through all the system-like partitions again and build a list of partitions to remove later.
 $PartitionsToRemove = @()
 
-$partitions | Where-Object { ($_.Size -le 360MB) -or ($_.GptType -eq $EFI_SYSTEM_PARTITION_GPT_TYPE) } | ForEach-Object {
+$partitions | Where-Object { ($_.Size -gt 80MB -and ($_.Size -le 360MB)) -or ($_.GptType -eq $EFI_SYSTEM_PARTITION_GPT_TYPE) } | ForEach-Object {
     if ($_.Offset -ne $TargetSystemPartition.Offset -and $systemPartition) {
         $PartitionsToRemove += $_
     }
@@ -272,6 +278,14 @@ if ($LASTEXITCODE -ne 0) {
 # Now we have to set the boot configuration database to point to the new drive.
 & c:\windows\system32\bcdedit /set "{bootmgr}" device partition=T: >> $LogFile
 
+# Remove the drive letter from the target system partition.
+# Write-Log -Level INFO "Removing T Drive mapping."
+# try {
+#     $TargetSystemPartition | Remove-PartitionAccessPath -AccessPath "T:\"
+# } catch {
+#     Write-Log -Level ERROR "Failed to remove T Drive mapping. Exiting..."
+# }
+
 # I would like to add logic here to copy any additional files from the old system partition to the new one.  This handles the case
 # where there are additional files on the system partition that bcdboot does not copy. e.g. symantec's boot driver
 # This is not currently implemented.
@@ -285,12 +299,18 @@ if ($LASTEXITCODE -ne 0) {
 
 $PartitionsToRemove | ForEach-Object {
     Write-Log -Level INFO "Attempting to remove old system partition at offset $($_.Offset)"
+    $haveCreatedScheduledTask = $false
     try {
         $_ | Remove-Partition -Confirm:$false -ErrorAction Stop
         Write-Log -Level INFO "Successfully removed old system partition at offset $($_.Offset)"
     } catch {
-        Write-Log -Level WARN "Failed to remove old system partition at offset $($_.Offset). Scheduling removal on next reboot."
-        Schedule-OldSystemPartitionRemoval -systemPartition $_ -diskNumber $diskNumber
+        if (-not $haveCreatedScheduledTask) {
+            Write-Log -Level WARN "Failed to remove old system partition at offset $($_.Offset). Scheduling removal on next reboot."
+            Schedule-OldSystemPartitionRemoval
+            $haveCreatedScheduledTask = $true
+        } else {
+            Write-Log -Level WARN "Failed to remove old system partition at offset $($_.Offset). It will be removed on the next reboot."
+        }
     }
 }
-
+Write-Log -Level INFO "Completed Fix-SystemPartition script."

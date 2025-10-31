@@ -1,5 +1,5 @@
 ##############################################################################
-# Fix-SystemPartition.ps1
+# Fix-SystemPartition.ps1 v1.00.00
 # Elizabeth Greene <elizabeth.a.greene@gmail.com> Copyright (C) 2025
 # Use this script at your own risk, no warranty is provided or implied
 # This script looks for weird system partition placements on GPT disks

@@ -27,7 +27,7 @@
         Number of remaining activations or error message.
     
     .NOTES
-        Special thanks to https://github.com/dadorner-msft/activationws for insights into the activation web service.
+        Special thanks to https://github.com/dadorner-msft/activationws for insights into the activation web service and Grok for assistance with .Net to powershell translation.
 
     #>
   [CmdletBinding()]

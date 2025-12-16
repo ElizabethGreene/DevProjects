@@ -5,7 +5,7 @@
 ### Basic Client Resolution
 
 ```mermaid
-graph sequenceDiagram
+sequenceDiagram
     participant C as Client PC
     participant S as DNS Server
 

@@ -196,7 +196,7 @@ A powershell script is available to confirm this.
 
 Microsoft will automatically update some "High Confidence" known-good configurations with each monthly cumulative update starting in January 2026.
 
-Guidance for deployments with Intune are in this article.
+Guidance for deployments with Intune or GPO are in this article.
 [SecureBoot playbook for certificates expiring in 2026](https://techcommunity.microsoft.com/blog/windows-itpro-blog/secure-boot-playbook-for-certificates-expiring-in-2026/4469235)
 
 ---

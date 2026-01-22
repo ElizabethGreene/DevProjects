@@ -10,14 +10,14 @@ SecureBoot is a *UEFI firmware* feature that requires boot code, including bootl
 
 SecureBoot is enabled by default on new Windows 11 workstations, was recommended for Windows 10 devices, and can be enabled for Windows Server as well.
 
-### Confirming if SecureBoot is enabled:
+### Confirming if SecureBoot is enabled
 
 MsInfo32:
 
 ![MsInfo32 Screenshot highlighting Secure Boot State](images/msinfo32.png)
 
-
 Powershell: This returns True if SecureBoot is enabled.
+
 ```Powershell
 Confirm-SecureBootUEFI
 ```
@@ -39,6 +39,7 @@ An attacker can bypass secureboot by replacing the bootloader with an older sign
 ## So what do we have to do?
 
 The SecureBoot rollout is a multi-step process.
+
 ### Secureboot Change Steps
 
 ```mermaid
@@ -46,7 +47,7 @@ timeline
     title SecureBoot Change Steps
     Phase 1 : Trust new certificate
     Phase 2 : Switch to new Bootloader
-    Phase 3 : Blacklist old Certificate
+    Phase 3 : Revoke old Certificate
     Phase 4 : Implement Secure Version Numbers (SVN)
 ```
 
@@ -118,7 +119,7 @@ Alternately, it can also be confirmed by mounting the system's boot volume and c
 
 ---
 
-#### Phase 3 : Blacklist/Revoke the old certificate in the UEFI firmware
+#### Phase 3 : Revoke the old certificate in the UEFI firmware
 
 In this phase, the old "Microsoft Windows PCA 2011" certificate is specifically marked as untrusted in the UEFI firmware.  **This is a service-impacting change.**  This is done by writing the old certificate's signature into the UEFI untrusted / revoked "dbx" database.
 
@@ -139,10 +140,9 @@ Start-ScheduledTask -TaskName "\Microsoft\Windows\PI\Secure-Boot-Update"
 **You need to understand the impact of this change before rolling it out.**
 
 The scheduled task that applies this will verify the new certificate is trusted by UEFI,and running the new bootloader. It also confirms the bitlocker configuration to verify it will not trigger bitlocker recovery and looks for firmware known issues related to this change to prevent failures after applying this.
- 
-__**//This is important.//**__
 
-After applying this change, the system will no longer be able to boot from the old bootloader.  That means it will refuse to SecureBoot from recovery media, USB Sticks, DVDs, ISOs, network boot images, or OS installation media that has not been updated with the new bootloader.
+> [Important]
+> After applying this change, the system will no longer be able to boot from the old bootloader.  That means it will refuse to SecureBoot from recovery media, USB Sticks, DVDs, ISOs, network boot images, or OS installation media that has not been updated with the new bootloader.
 
 ##### Phase 3: What happens if I don't do this?
 
@@ -189,10 +189,6 @@ The system will be vulnerable to replace-the-bootloader attacks against SecureBo
 ##### Phase 4: How do I confirm this is done?
 
 A powershell script is available to confirm this.
-
-```powershell
-[System.Text.Encoding]::ASCII.GetString((Get-SecureBootUEFI dbx).bytes) -match 'Microsoft Windows Production PCA 2011' 
-```
 
 ---
 

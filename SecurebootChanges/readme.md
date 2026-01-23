@@ -45,8 +45,10 @@ The SecureBoot rollout is a multi-step process.
 ```mermaid
 timeline
     title SecureBoot Change Steps
+    section New Certificate Support
     Phase 1 : Trust new certificate
     Phase 2 : Switch to new Bootloader
+    section Block SecureBoot Attacks
     Phase 3 : Revoke old Certificate
     Phase 4 : Implement Secure Version Numbers (SVN)
 ```

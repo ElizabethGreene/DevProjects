@@ -196,10 +196,40 @@ A powershell script is available to confirm this.
 
 ## Automated Deployments (the easy button)
 
-Microsoft will automatically update some "High Confidence" known-good configurations with each monthly cumulative update starting in January 2026.
+Setting this registry key is the easiest way to mass-deploy the new certificates and switch to the new bootloader.
 
-Guidance for deployments with Intune or GPO are in this article.
+| | |
+| ------ | ------ |
+| Path: | HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecureBoot |
+| Name: | AvailableUpdates |
+| Type: | REG_DWORD |
+| Value: | 0x5944 |
+| | |
+
+After setting this key, you can make this process go faster by running the deployment scheduled task.  These commands set this key and run the scheduled task.
+
+```powershell
+reg add HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Secureboot /v AvailableUpdates /t REG_DWORD /d 0x5944 /f
+
+Start-ScheduledTask -TaskName "\Microsoft\Windows\PI\Secure-Boot-Update"
+```
+
+After setting this key, status information will be written to the UEFICA2023Status and UEFICA2023Error registry keys under HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecureBoot\Servicing. If UEFICA2023Status is "Updated", the machine has completed the Secureboot update, the certificate is trusted, and it's running on the new bootloader.  The UEFICA2023Error key should be set to zero. If it's not, check the system event logs for information on the deployment error. Successful deployment generates an 1808 event. A failed deployment generates an 1801 event.
+
+Guidance for deploying this key with Intune or GPO is in this article.
 [SecureBoot playbook for certificates expiring in 2026](https://techcommunity.microsoft.com/blog/windows-itpro-blog/secure-boot-playbook-for-certificates-expiring-in-2026/4469235)
+
+---
+
+### Alternatives to the easy button
+
+#### Using Controlled Feature Rollout
+
+If your organization allows sending telemetry data to Microsoft, you can set the "MicrosoftUpdateManagedOptIn" key to 1 to allow the Windows to use the Controlled Feature Rollout technology to gradually roll the Secureboot updates out automatically.
+
+#### Forbidding automatic updates
+
+Microsoft will automatically update some "High Confidence" known-good configurations with each monthly cumulative update starting in January 2026.  You can opt out of these, forbidding these automatic updates, by setting the "HighConfidenceOptOut" registry key to 1.  This is not recommended.
 
 ---
 

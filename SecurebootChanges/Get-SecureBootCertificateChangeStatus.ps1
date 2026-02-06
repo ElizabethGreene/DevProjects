@@ -64,7 +64,6 @@ function Get-BootLoaderPath {
         throw "Get-BootloaderPath failed, Bootloader '$bootLoaderPath' does not exist or cannot be accessed."
     }
 
-    write-host $bootLoaderPath
     Return $bootLoaderPath
 }
 

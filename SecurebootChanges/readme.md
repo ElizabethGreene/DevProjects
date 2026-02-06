@@ -77,7 +77,7 @@ Making this change should not have any impact on a system.
 
 ##### Phase 1: What happens if I don't do this?
 
-The system will be unable to boot from bootloaders signed with Microsoft's new certificate.
+The system will be unable to SecureBoot from bootloaders signed with Microsoft's new certificate.  Additionally, Microsoft will not be able to update the system bootloader in updates after the old certificate expires in June 2026.
 
 ##### Phase 1: How do I confirm this is done?
 
@@ -111,7 +111,7 @@ This should not have a negative impact.  Specifically, the scheduled task will n
 
 ##### Phase 2: What happens if I don't do this?
 
-The system will be unable to apply new bootloaders signed with Microsoft's new certificate.
+The system will be unable to apply new bootloaders signed with Microsoft's new certificate. Additionally, Microsoft will not be able to update the system bootloader in updates after the old certificate expires in June 2026.
 
 ##### Phase 2: How do I confirm this is done?
 

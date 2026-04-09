@@ -8,12 +8,22 @@
 Retrieves the status of Secure Boot certificate changes on a Windows system.
 
 .DESCRIPTION
-Checks Secure Boot enablement, UEFI trust of the 2023 CA certificate, revocation of the 2011 CA certificate,
+Checks the Bios/UEFI firmware type, Secure Boot enablement, UEFI trust of the 2023 CA certificate, revocation of the 2011 CA certificate,
 SVN presence in dbx, and whether bootmgfw.efi has been updated with the new certificate, and returns these values plus a summary flag value. 
 Requires administrative privileges to run.
 
 .EXAMPLE
 Get-SecureBootCertificateChangeStatus
+
+SecureBootEnabled               : True
+UEFITrustsNew2023CACertificate  : True
+UEFIRevokedOld2011CACertificate : False
+SVNEnabled                      : False
+BootloaderUpdated               : True
+Error                           : False
+FirmwareType                    : Uefi
+FlagValue                       : 51
+
 #>
 
 #Requires -RunAsAdministrator
@@ -218,6 +228,7 @@ function Get-SecureBootCertificateChangeStatus {
         SVNEnabled                       = $false
         BootloaderUpdated                = $false
         Error                            = $true
+        FirmwareType                      = "Unknown"
         # This is a binary flag value that summarizes the status of all checks.
         # It's for tools that can only handle a single integer value, e.g. like the return value from a compliance script.
         # Bit 0 (1): Secure Boot Enabled
@@ -225,11 +236,23 @@ function Get-SecureBootCertificateChangeStatus {
         # Bit 2 (4): UEFI Revoked Old 2011 CA Certificate
         # Bit 3 (8): SVN Enabled
         # Bit 4 (16): Bootloader Updated
+        # Bit 5 (32): True if the system has a UEFI firmware
         # Bit 7 (128): Error Occurred
         FlagValue                        = $null
     }
 
     try {
+        # Save and Turn off the progress bar for the next command so it runs silently.
+        $SavedProgressPreference = $ProgressPreference # Default is 'Continue'
+        $ProgressPreference = "SilentlyContinue"
+
+        # Get the firmware type (BIOS or UEFI)
+        $result.FirmwareType = (get-computerinfo).BiosFirmwareType
+
+        # Restore the original progress preference
+        $ProgressPreference = $SavedProgressPreference
+
+
         # Check if Secure Boot is enabled
         $result.SecureBootEnabled = Confirm-SecureBootUEFI
 
@@ -243,9 +266,17 @@ function Get-SecureBootCertificateChangeStatus {
         }
 
         # The most complex of these is determining if the bootloader on the EFI system partition has the new signature.
-        $bootManagerSignature = Get-AuthenticodeSignature -LiteralPath (Get-BootLoaderPath)
+        # Intuitively, you would expect we could use Get-AuthenticodeSignature here to verify the bootloader signature.
+        # e.g. $bootManagerSignature = Get-AuthenticodeSignature -LiteralPath (Get-BootLoaderPath)
+
+        # That does not work because the bootloader has a catalog signature, we specifically need to see the file signature, 
+        # and get-authenticode signature prefers the catalog signature if it is present.
+        # So instead, we have to parse the signature information directly from the file.
+
+        $bootManagerPath = Get-BootLoaderPath
+        $bootManagerCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([System.Security.Cryptography.X509Certificates.X509Certificate]::CreateFromSignedFile($bootManagerPath))
         
-        $result.BootloaderUpdated = ($bootManagerSignature).SignerCertificate.IssuerName -match  'Windows UEFI CA 2023'
+        $result.BootloaderUpdated = $bootManagerCert.Issuer -match  'Windows UEFI CA 2023'
         
         # If we got this far without an exception, then we can set Error to false.
         $result.Error = $false
@@ -253,6 +284,8 @@ function Get-SecureBootCertificateChangeStatus {
     } catch {
         Write-Error "An error occurred retrieving Secure Boot certificate change status: $_"
     }
+
+
     # Calculate the FlagValue and return the result
     $flagValue = 0
     if ($result.SecureBootEnabled) { $flagValue += 1 }
@@ -261,8 +294,9 @@ function Get-SecureBootCertificateChangeStatus {
     if ($result.SVNEnabled) { $flagValue += 8 }
     if ($result.BootloaderUpdated) { $flagValue += 16 }
     if ($result.Error) { $flagValue += 128 }
+    if ($result.FirmwareType -match "uefi") { $flagValue += 32 }
     $result.FlagValue = $flagValue
-    
+
     return $result
 }
 

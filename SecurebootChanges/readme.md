@@ -40,6 +40,8 @@ An attacker can bypass secureboot by replacing the bootloader with an older sign
 
 The SecureBoot rollout is a multi-step process.
 
+<details><summary> This information is out of date and you should refer to http://aka.ms/GetSecureBoot instead</summary>
+
 ### Secureboot Change Steps
 
 ```mermaid
@@ -193,6 +195,8 @@ The system will be vulnerable to replace-the-bootloader attacks against SecureBo
 A powershell script is available to confirm this.
 
 ---
+
+</details>
 
 ## Automated Deployments (the easy button)
 

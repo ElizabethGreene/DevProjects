@@ -22,6 +22,11 @@ SVNEnabled                      : False
 BootloaderUpdated               : True
 Error                           : False
 FirmwareType                    : Uefi
+Has2011KEKCertificate           : True
+Has2011KEKCertificate           : True
+Has2011UEFICACertificate        : True
+Has2023ThirdPartyCACertificate  : True
+Has2023OptionRomCertificate     : True
 FlagValue                       : 51
 
 #>
@@ -229,6 +234,21 @@ function Get-SecureBootCertificateChangeStatus {
         BootloaderUpdated                = $false
         Error                            = $true
         FirmwareType                      = "Unknown"
+        
+        #New feature 20230424
+        # Does the system have the 2011 KEK and 2023 certificates?
+        Has2011KEKCertificate           = $false
+        Has2023KEKCertificate           = $false
+
+        # Does the system have the 2011 UEFI CA certificate?
+        Has2011UEFICACertificate        = $false
+
+        # If the system has the 2023 UEFI CA certificate, the SecureBoot update task should
+        # automatically install these certificates for signing 3rd party option ROMs and bootloaders.
+        # These are optional and will NOT be present on Secured Core systems. 
+        Has2023ThirdPartyCACertificate  = $false
+        Has2023OptionRomCertificate     = $false
+        
         # This is a binary flag value that summarizes the status of all checks.
         # It's for tools that can only handle a single integer value, e.g. like the return value from a compliance script.
         # Bit 0 (1): Secure Boot Enabled
@@ -278,6 +298,21 @@ function Get-SecureBootCertificateChangeStatus {
         
         $result.BootloaderUpdated = $bootManagerCert.Issuer -match  'Windows UEFI CA 2023'
         
+        #New feature 20230424
+        # Does the system have the 2011 KEK and 2023 certificates?
+        $result.Has2011KEKCertificate = [System.Text.Encoding]::ASCII.GetString((Get-SecureBootUEFI kek).bytes) -match 'Microsoft Corporation KEK CA 2011' 
+        $result.Has2023KEKCertificate = [System.Text.Encoding]::ASCII.GetString((Get-SecureBootUEFI kek).bytes) -match 'Microsoft Corporation KEK 2K CA 2023' 
+
+        # Does the system have the 2011 UEFI CA certificate?
+        $result.Has2011UEFICACertificate = [System.Text.Encoding]::ASCII.GetString((Get-SecureBootUEFI db).bytes) -match 'Microsoft Corporation UEFI CA 2011'
+
+        # If the system has the 2023 UEFI CA certificate, the SecureBoot update task should
+        # automatically install these certificates for signing 3rd party option ROMs and bootloaders.
+        # These are optional and will NOT be present on Secured Core systems. 
+        $result.Has2023ThirdPartyCACertificate  = [System.Text.Encoding]::ASCII.GetString((Get-SecureBootUEFI db).bytes) -match 'Microsoft UEFI CA 2023'
+        $result.Has2023OptionRomCertificate     = [System.Text.Encoding]::ASCII.GetString((Get-SecureBootUEFI db).bytes) -match 'Microsoft Option ROM UEFI CA 2023'
+
+
         # If we got this far without an exception, then we can set Error to false.
         $result.Error = $false
         

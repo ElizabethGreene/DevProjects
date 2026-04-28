@@ -37,13 +37,11 @@ The certificate Microsoft uses for SecureBoot signing will expire on June 17, 20
 ```mermaid
 flowchart TD
     Start([Start: Scheduled Task]) 
-    --> Install[Install Bootloader,<br>KEK, and optional<br>3rd-party CA certificates]
+    --> Install[Install new signing cert,<br>KEK cert, and optional<br>3rd-party CA certificates]
     
     Install --> Reboot[Wait for system to reboot]
     
-    Reboot --> Confirm[Confirm Bootloader<br>and KEK certificates<br>are present]
-    
-    Confirm --> Check{Are Bootloader<br>& KEK present?}
+    Reboot --> Check{Are the signing <br>& KEK Certificates present?}
     
     Check -->|Yes| Replace[Replace the Bootloader]
     Check -->|No| EndNo[End: Certificates missing<br>Log errors]
@@ -53,7 +51,6 @@ flowchart TD
     style Start fill:#e3f2fd,stroke:#1976d2
     style Install fill:#f3e5f5,stroke:#7b1fa2
     style Reboot fill:#fff3e0,stroke:#f57c00
-    style Confirm fill:#e8f5e9,stroke:#388e3c
     style Replace fill:#fce4ec,stroke:#c2185b
     style EndYes fill:#e0f2f1,stroke:#00796b
     style EndNo fill:#ffebee,stroke:#c62828

@@ -32,6 +32,34 @@ The certificate Microsoft uses for SecureBoot signing will expire on June 17, 20
 
 ![Screenshot of Windows Production PCA 2011 Certificate Details](images/oldcertificate.png)
 
+### What is the SecureBoot update scheduled task doing?
+
+```mermaid
+flowchart TD
+    Start([Start: Scheduled Task]) 
+    --> Install[Install Bootloader,<br>KEK, and optional<br>3rd-party CA certificates]
+    
+    Install --> Reboot[Wait for system to reboot]
+    
+    Reboot --> Confirm[Confirm Bootloader<br>and KEK certificates<br>are present]
+    
+    Confirm --> Check{Are Bootloader<br>& KEK present?}
+    
+    Check -->|Yes| Replace[Replace the Bootloader]
+    Check -->|No| EndNo[End: Certificates missing<br>Log errors]
+    
+    Replace --> EndYes[End: Success]
+    
+    style Start fill:#e3f2fd,stroke:#1976d2
+    style Install fill:#f3e5f5,stroke:#7b1fa2
+    style Reboot fill:#fff3e0,stroke:#f57c00
+    style Confirm fill:#e8f5e9,stroke:#388e3c
+    style Replace fill:#fce4ec,stroke:#c2185b
+    style EndYes fill:#e0f2f1,stroke:#00796b
+    style EndNo fill:#ffebee,stroke:#c62828
+```
+
+
 ### Security Vulnerability in SecureBoot
 
 An attacker can bypass secureboot by replacing the bootloader with an older signed but vulnerable bootloader, then exploit that to bypass SecureBoot protection.  e.g. BlackLotus CVE-2023-24932.
